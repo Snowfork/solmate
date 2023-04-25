@@ -28,6 +28,17 @@ contract MerkleProofLibTest is DSTestPlus {
         assertBoolEq(this.verify(proof, root, leaf), true);
     }
 
+    function testVerifyShortProofSupplied() public {
+        // Merkle tree created from leaves ['a', 'b', 'c'].
+        // Leaf is 'c'.
+        bytes32[] memory proof = new bytes32[](1);
+        proof[0] = 0x805b21d846b189efaeb0377d6bb0d201b3872a363e607c25088f025b0c6ae1f8;
+        bytes32 root = 0x5842148bc6ebeb52af882a317c765fccd3ae80589b21a9b8cbf21abb630e46a7;
+        bytes32 leaf = 0x0b42b6393c1f53060fe3ddbfcd7aadcca894465a5a438f69c87d790b2299b9b2;
+
+        assertBoolEq(this.verify(proof, root, leaf), true);
+    }
+
     function testVerifyInvalidProofSupplied() public {
         // Merkle tree created from leaves ['a', 'b', 'c'].
         // Leaf is 'a'.
