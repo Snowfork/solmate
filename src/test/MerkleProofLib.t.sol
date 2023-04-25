@@ -17,7 +17,7 @@ contract MerkleProofLibTest is DSTestPlus {
         assertBoolEq(this.verify(proof, 0x00, leaf), false);
     }
 
-    function testValidProofSupplied() public {
+    function testVerifyValidProofSupplied() public {
         // Merkle tree created from leaves ['a', 'b', 'c'].
         // Leaf is 'a'.
         bytes32[] memory proof = new bytes32[](2);
