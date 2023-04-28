@@ -1,20 +1,22 @@
 // SPDX-License-Identifier: MIT
 pragma solidity >=0.8.0;
 
+import "forge-std/Test.sol";
+
 import {DSTestPlus} from "./utils/DSTestPlus.sol";
 
 import {MerkleProofLib} from "../utils/MerkleProofLib.sol";
 
-contract MerkleProofLibTest is DSTestPlus {
+contract MerkleProofLibTest is Test {
     function testVerifyEmptyMerkleProofSuppliedLeafAndRootSame() public {
         bytes32[] memory proof;
-        assertBoolEq(this.verify(proof, 0x00, 0x00), true);
+        assertEq(this.verify(proof, 0x00, 0x00), true);
     }
 
     function testVerifyEmptyMerkleProofSuppliedLeafAndRootDifferent() public {
         bytes32[] memory proof;
         bytes32 leaf = "a";
-        assertBoolEq(this.verify(proof, 0x00, leaf), false);
+        assertEq(this.verify(proof, 0x00, leaf), false);
     }
 
     function testVerifyValidProofSupplied() public {
@@ -25,7 +27,7 @@ contract MerkleProofLibTest is DSTestPlus {
         proof[1] = 0x0b42b6393c1f53060fe3ddbfcd7aadcca894465a5a438f69c87d790b2299b9b2;
         bytes32 root = 0x5842148bc6ebeb52af882a317c765fccd3ae80589b21a9b8cbf21abb630e46a7;
         bytes32 leaf = 0x3ac225168df54212a25c1c01fd35bebfea408fdac2e31ddd6f80a4bbf9a5f1cb;
-        assertBoolEq(this.verify(proof, root, leaf), true);
+        assertEq(this.verify(proof, root, leaf), true);
     }
 
     function testVerifyShortProofSupplied() public {
@@ -36,7 +38,7 @@ contract MerkleProofLibTest is DSTestPlus {
         bytes32 root = 0x5842148bc6ebeb52af882a317c765fccd3ae80589b21a9b8cbf21abb630e46a7;
         bytes32 leaf = 0x0b42b6393c1f53060fe3ddbfcd7aadcca894465a5a438f69c87d790b2299b9b2;
 
-        assertBoolEq(this.verify(proof, root, leaf), true);
+        assertEq(this.verify(proof, root, leaf), true);
     }
 
     function testVerifyLargeProofSupplied() public {
@@ -56,7 +58,7 @@ contract MerkleProofLibTest is DSTestPlus {
         bytes32 root = 0x147c1ac0abf462d97b0f59c5d3616f81c96566d1e2ddab5359f16c3bf0b48cc9;
         bytes32 leaf = 0xbeced09521047d05b8960b7e7bcc1d1292cf3e4b2a6b63f48335cbde5f7545d2;
 
-        assertBoolEq(this.verify(proof, root, leaf), true);
+        assertEq(this.verify(proof, root, leaf), true);
     }
 
     function testVerifyInvalidProofSupplied() public {
@@ -68,7 +70,71 @@ contract MerkleProofLibTest is DSTestPlus {
         proof[1] = 0x0b42b6393c1f53060fe3ddbfcd7aadcca894465a5a438f69c87d790b2299b9b2;
         bytes32 root = 0x5842148bc6ebeb52af882a317c765fccd3ae80589b21a9b8cbf21abb630e46a7;
         bytes32 leaf = 0x3ac225168df54212a25c1c01fd35bebfea408fdac2e31ddd6f80a4bbf9a5f1cb;
-        assertBoolEq(this.verify(proof, root, leaf), false);
+        assertEq(this.verify(proof, root, leaf), false);
+    }
+
+    function testFuzz_RandomProof(uint8 leafCount, uint8 leafIndex) public {
+        vm.assume(leafIndex < leafCount);
+
+        // most significant bit of leafCount is the number of nodes in the second-last layer of a complete binary tree
+        // with leafCount leaves
+        // most-significant bit of leafCount = leafCount -> reverse -> least-significant bit -> reverse
+        uint8 bitReversedLeafCount = reverseBitsU8(leafCount);
+        uint8 lsb = bitReversedLeafCount & (~bitReversedLeafCount+1);
+        uint8 secondLastLayerCount = reverseBitsU8(lsb);
+        uint256 lastLayerCount = 2*(leafCount - secondLastLayerCount);
+
+        bytes32[] memory tree = new bytes32[](2*uint256(leafCount)-1);
+
+        for (uint256 i = 0; i < tree.length; i++) {
+            if (i < lastLayerCount) {
+                // store bottom layer leaf hash
+                tree[tree.length - 1 - i] = keccak256(abi.encodePacked(lastLayerCount - 1 - i));
+            } else if (i < leafCount) {
+                // store second-last layer leaf hash
+                tree[tree.length - 1 - i] = keccak256(abi.encodePacked(leafCount - 1 - (i - lastLayerCount)));
+            } else {
+                // store sorted concatenation of leaf hashes
+                uint256 leftIndex = 2*(tree.length - 1 - i) + 1;
+                tree[tree.length - 1 - i] = hashSorted(tree[leftIndex], tree[leftIndex + 1]);
+            }
+        }
+
+        // Proof size is log2 of secondLastLayerCount, which is always a power of 2 in a complete tree
+        uint8 proofSize = 0;
+        // Count the zeroes after the bit set in secondLastLayerCount
+        // Set all bits smaller than the single bit set in secondLastLayerCount
+        uint8 n = secondLastLayerCount - 1;
+        while(n != 0) {
+            n &= n - 1;
+            proofSize++;
+        }
+        // Add 1 when the leaf is in the last layer of a non-perfect tree
+        if (leafIndex < lastLayerCount && lastLayerCount != leafCount) {
+            proofSize += 1;
+        }
+
+        bytes32[] memory proof = new bytes32[](proofSize);
+        uint256 current;
+        if (leafIndex < lastLayerCount) {
+            current = tree.length - lastLayerCount + leafIndex;
+        } else {
+            current = tree.length - leafCount + leafIndex - lastLayerCount ;
+        }
+
+        uint256 sibling;
+        for (uint8 i = 0; i < proof.length; i++) {
+            if (current % 2 == 0) {
+                sibling = current - 1;
+            } else {
+                sibling = current + 1;
+            }
+            proof[i] = tree[sibling];
+
+            current = (current - 1) / 2;
+        }
+
+        assertEq(this.verify(proof, tree[0], keccak256(abi.encodePacked(uint256(leafIndex)))), true);
     }
 
     function verify(
@@ -77,5 +143,21 @@ contract MerkleProofLibTest is DSTestPlus {
         bytes32 leaf
     ) external pure returns (bool) {
         return MerkleProofLib.verify(proof, root, leaf);
+    }
+
+    function hashSorted(bytes32 a, bytes32 b) internal pure returns (bytes32) {
+        if(a < b) {
+            return keccak256(abi.encodePacked(a, b));
+        } else {
+            return keccak256(abi.encodePacked(b, a));
+        }
+    }
+
+    function reverseBitsU8(uint8 n) internal pure returns (uint8) {
+        // swap adjacent bits, then pairs, then nibbles
+        uint8 reversed = (n & 0xAA) >> 1 | (n & 0x55) << 1;
+        reversed = (reversed & 0xCC) >> 2 | (reversed & 0x33) << 2;
+        reversed = (reversed & 0xF0) >> 4 | (reversed & 0x0F) << 4;
+        return reversed;
     }
 }
