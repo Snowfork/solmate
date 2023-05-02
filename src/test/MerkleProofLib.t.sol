@@ -102,8 +102,9 @@ contract MerkleProofLibTest is Test {
 
         // Proof size is log2 of secondLastLayerCount, which is always a power of 2 in a complete tree
         uint8 proofSize = 0;
-        // Count the zeroes after the bit set in secondLastLayerCount
-        // Set all bits smaller than the single bit set in secondLastLayerCount
+        // Count the zeroes after the single bit set in secondLastLayerCount
+        // Subtracting 1 sets all bits smaller than the single bit set in secondLastLayerCount
+        // Then use Kernighan's algorithm to count the set bits
         uint8 n = secondLastLayerCount - 1;
         while(n != 0) {
             n &= n - 1;
